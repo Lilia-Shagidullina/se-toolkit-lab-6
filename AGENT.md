@@ -2,23 +2,37 @@
 
 ## Overview
 
-This agent is a Python CLI that connects to an LLM (Large Language Model) and answers questions. It serves as the foundation for more advanced agent features (tools, agentic loop) in subsequent tasks.
+This agent is a Python CLI that connects to an LLM (Large Language Model) with tool-calling capabilities. It can navigate the project wiki using `read_file` and `list_files` tools to find answers and cite sources.
 
 ## Architecture
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
 │  CLI Input  │ ──> │   agent.py   │ ──> │  Qwen Code API  │
-│  (question) │     │  (parse,     │     │  (LLM response) │
-│             │     │   call LLM)  │     │                 │
+│  (question) │     │ (agentic     │     │ (LLM response   │
+│             │     │   loop)      │     │  + tool calls)  │
 └─────────────┘     └──────────────┘     └─────────────────┘
                            │
-                           v
+                           ▼
                     ┌──────────────┐
                     │  JSON Output │
-                    │  (stdout)    │
+                    │ (answer +    │
+                    │  source +    │
+                    │  tool_calls) │
                     └──────────────┘
 ```
+
+### Agentic Loop
+
+1. Send user question + tool definitions to LLM
+2. If LLM responds with `tool_calls`:
+   - Execute each tool
+   - Append results as `tool` role messages
+   - Send back to LLM
+3. If LLM responds with text (no tool calls):
+   - Extract answer and source
+   - Output JSON and exit
+4. Maximum 10 tool calls per question (safety limit)
 
 ## LLM Provider
 
@@ -47,7 +61,7 @@ LLM_MODEL=qwen3-coder-plus
 ### Basic Usage
 
 ```bash
-uv run agent.py "What does REST stand for?"
+uv run agent.py "How do you resolve a merge conflict?"
 ```
 
 ### Output Format
@@ -55,19 +69,73 @@ uv run agent.py "What does REST stand for?"
 The agent outputs a single JSON line to stdout:
 
 ```json
-{"answer": "Representational State Transfer.", "tool_calls": []}
+{
+  "answer": "Edit the conflicting file, choose which changes to keep, then stage and commit.",
+  "source": "wiki/git-workflow.md#resolving-merge-conflicts",
+  "tool_calls": [
+    {
+      "tool": "list_files",
+      "args": {"path": "wiki"},
+      "result": "git-workflow.md\n..."
+    },
+    {
+      "tool": "read_file",
+      "args": {"path": "wiki/git-workflow.md"},
+      "result": "..."
+    }
+  ]
+}
 ```
 
 **Fields:**
 - `answer` (string): The LLM's answer to the question
-- `tool_calls` (array): Empty for Task 1 (will be populated in Task 2)
+- `source` (string): Reference to the wiki section (e.g., `wiki/git-workflow.md#section-anchor`)
+- `tool_calls` (array): All tool calls made during the agentic loop
 
-### Error Handling
+## Tools
 
-- All debug/error output goes to stderr
-- Only valid JSON goes to stdout
-- Exit code 0 on success
-- 60-second timeout for LLM responses
+### `read_file`
+
+Read a file from the project repository.
+
+**Parameters:**
+- `path` (string): Relative path from project root (e.g., `wiki/git-workflow.md`)
+
+**Returns:** File contents as a string, or an error message.
+
+**Example:**
+```json
+{"tool": "read_file", "args": {"path": "wiki/git-workflow.md"}}
+```
+
+### `list_files`
+
+List files and directories at a given path.
+
+**Parameters:**
+- `path` (string): Relative directory path from project root (e.g., `wiki`)
+
+**Returns:** Newline-separated listing of entries.
+
+**Example:**
+```json
+{"tool": "list_files", "args": {"path": "wiki"}}
+```
+
+### Security
+
+Both tools implement path security:
+- Block `../` path traversal attempts
+- Block absolute paths
+- Verify resolved paths are within project root using `os.path.realpath()`
+
+## System Prompt
+
+The agent uses a system prompt that instructs the LLM to:
+1. Use `list_files` to discover wiki files
+2. Use `read_file` to find relevant information
+3. Include source references (file path + section anchor) in answers
+4. Only answer when information has been found
 
 ## Implementation Details
 
@@ -76,36 +144,81 @@ The agent outputs a single JSON line to stdout:
 - `httpx` - HTTP client for API calls
 - `python-dotenv` - Environment variable loading
 
-### API Call Format
+### Tool Schema (OpenAI Function Calling)
 
-The agent uses the OpenAI-compatible chat completions API:
+```python
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read a file from the project repository",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"}
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "List files and directories at a given path",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"}
+                },
+                "required": ["path"]
+            }
+        }
+    }
+]
+```
+
+### API Call Format
 
 ```python
 POST /chat/completions
 {
     "model": "qwen3-coder-plus",
     "messages": [
-        {"role": "system", "content": "You are a helpful assistant..."},
-        {"role": "user", "content": "<question>"}
+        {"role": "system", "content": "..."},
+        {"role": "user", "content": "<question>"},
+        {"role": "assistant", "tool_calls": [...]},
+        {"role": "tool", "tool_call_id": "...", "content": "..."}
     ],
-    "response_format": {"type": "json_object"}
+    "tools": [...],
+    "tool_choice": "auto"
 }
 ```
 
+## Error Handling
+
+- All debug/error output goes to stderr
+- Only valid JSON goes to stdout
+- Exit code 0 on success
+- 60-second timeout for LLM responses
+- Maximum 10 tool calls per question
+
 ## Testing
 
-Run the unit test:
+Run the unit tests:
 
 ```bash
-uv run poe test-unit
+uv run pytest tests/test_agent.py -v
 ```
 
 ## Files
 
 | File | Description |
 |------|-------------|
-| `agent.py` | Main CLI script |
+| `agent.py` | Main CLI script with agentic loop |
 | `.env.agent.secret` | LLM configuration (not committed) |
 | `AGENT.md` | This documentation |
-| `plans/task-1.md` | Implementation plan |
-| `backend/tests/unit/test_agent.py` | Regression test |
+| `plans/task-1.md` | Task 1 implementation plan |
+| `plans/task-2.md` | Task 2 implementation plan |
+| `tests/test_agent.py` | Regression tests |

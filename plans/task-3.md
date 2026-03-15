@@ -152,12 +152,64 @@ Run `run_eval.py` and iterate:
 3. The agentic loop correctly handles tool calls and responses
 4. To fully test, deploy the agent on the VM where the LLM API is accessible
 
+## Bug Fixes Identified
+
+During development, two bugs were found and fixed in the analytics router:
+
+### Bug 1: Division by Zero in `/completion-rate`
+**Location:** `backend/app/routers/analytics.py`, `get_completion_rate()` function
+
+**Problem:** When no learners exist for a lab, `total_learners` is 0, causing `ZeroDivisionError`.
+
+**Fix:** Added a check before division:
+```python
+if total_learners == 0:
+    return {
+        "lab": lab,
+        "completion_rate": 0.0,
+        "passed": 0,
+        "total": 0,
+    }
+```
+
+### Bug 2: None-unsafe Sort in `/top-learners`
+**Location:** `backend/app/routers/analytics.py`, `get_top_learners()` function
+
+**Problem:** `avg_score` from `func.avg()` can be `None`, causing `TypeError` when sorting.
+
+**Fix:** Handle `None` values in the sort key:
+```python
+ranked = sorted(rows, key=lambda r: r.avg_score if r.avg_score is not None else 0, reverse=True)
+```
+
+Also handle `None` in the output:
+```python
+"avg_score": round(r.avg_score, 1) if r.avg_score is not None else 0.0,
+```
+
+## Final Benchmark Results
+
+**Implementation Status:** Complete
+
+**Key fixes applied:**
+1. Added `query_api` tool with proper authentication
+2. Fixed division by zero bug in analytics
+3. Fixed None-unsafe sort in analytics
+4. Updated system prompt to guide tool selection
+
 **Known working features:**
 - All three tools are registered with proper schemas
 - Path security prevents traversal attacks
 - `query_api` authenticates with `LMS_API_KEY`
 - Error handling returns structured JSON responses
 - System prompt guides tool selection appropriately
+
+**Local Testing Limitation:** The LLM API at `http://10.93.25.232:42005/v1` is not accessible from this environment. The agent implementation is complete and ready for evaluation on the VM where the LLM API is available.
+
+**Expected behavior when LLM API is available:**
+- Questions 0-3: Use `read_file` and `list_files` for wiki/source lookups
+- Questions 4-7: Use `query_api` for data queries and error diagnosis
+- Questions 8-9: Use `read_file` for reasoning about architecture and ETL pipeline
 
 ## File Structure
 

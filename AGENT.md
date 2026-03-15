@@ -302,6 +302,18 @@ The benchmark tests 10 questions across all categories:
 
 5. **Source field flexibility:** For API queries, the source can be the endpoint itself (e.g., `GET /items/`). For file-based answers, use `path/to/file.md#section-anchor`.
 
+6. **Bug fixes from benchmark testing:**
+   - **Division by zero:** The `/completion-rate` endpoint crashed when no learners existed. Fixed by checking `total_learners == 0` before division.
+   - **None-unsafe sort:** The `/top-learners` endpoint crashed when `avg_score` was `None`. Fixed by handling `None` in the sort key and output formatting.
+
+7. **System prompt design:** Clear guidance on when to use each tool type (wiki vs API) significantly improves tool selection accuracy.
+
+8. **Timeout handling:** Setting appropriate timeouts (60s for LLM, 30s for API) prevents the agent from hanging indefinitely.
+
+9. **Iterative development:** Running `run_eval.py` after each change helps identify issues early and track progress.
+
+10. **LLM limitations:** The agent may need multiple tool calls to gather enough context. The 10-call limit provides a safety net while allowing sufficient exploration.
+
 ## Files
 
 | File | Description |

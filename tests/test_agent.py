@@ -3,19 +3,27 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
+
+# Get the project root directory
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
+
+def run_agent(question: str) -> dict:
+    """Helper to run agent.py and return parsed JSON output."""
+    result = subprocess.run(
+        [sys.executable, "agent.py", question],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=PROJECT_ROOT,
+    )
+    return json.loads(result.stdout)
 
 
 def test_agent_returns_valid_json():
     """Test that agent.py returns valid JSON with required fields."""
-    result = subprocess.run(
-        [sys.executable, "-m", "uv", "run", "agent.py", "What is 2+2?"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-    # Parse stdout as JSON
-    output = json.loads(result.stdout)
+    output = run_agent("What is 2+2?")
 
     # Check required fields exist
     assert "answer" in output, "Response must contain 'answer' field"
@@ -31,15 +39,7 @@ def test_agent_returns_valid_json():
 
 def test_agent_returns_source_field():
     """Test that agent.py returns a response with 'source' field."""
-    result = subprocess.run(
-        [sys.executable, "-m", "uv", "run", "agent.py", "What is this project about?"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-    # Parse stdout as JSON
-    output = json.loads(result.stdout)
+    output = run_agent("What is this project about?")
 
     # Check source field exists
     assert "source" in output, "Response must contain 'source' field"
@@ -52,15 +52,7 @@ def test_agent_with_wiki_question():
     This test checks that when asked about wiki content, the agent
     uses read_file or list_files tools.
     """
-    result = subprocess.run(
-        [sys.executable, "-m", "uv", "run", "agent.py", "What files are in the wiki?"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-    # Parse stdout as JSON
-    output = json.loads(result.stdout)
+    output = run_agent("What files are in the wiki?")
 
     # Check required fields
     assert "answer" in output, "Response must contain 'answer' field"
@@ -77,22 +69,7 @@ def test_agent_framework_question():
     Question: 'What framework does the backend use?'
     Expected: read_file in tool_calls, FastAPI in answer.
     """
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "uv",
-            "run",
-            "agent.py",
-            "What Python web framework does the backend use?",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-    # Parse stdout as JSON
-    output = json.loads(result.stdout)
+    output = run_agent("What Python web framework does the backend use?")
 
     # Check required fields
     assert "answer" in output, "Response must contain 'answer' field"
@@ -110,22 +87,7 @@ def test_agent_query_api_tool():
     Question: 'How many items are in the database?'
     Expected: query_api in tool_calls (when backend is available).
     """
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "uv",
-            "run",
-            "agent.py",
-            "How many items are currently stored in the database?",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-    # Parse stdout as JSON
-    output = json.loads(result.stdout)
+    output = run_agent("How many items are currently stored in the database?")
 
     # Check required fields exist
     assert "answer" in output, "Response must contain 'answer' field"
@@ -138,3 +100,44 @@ def test_agent_query_api_tool():
 
     # Note: query_api may fail if backend is not running, but tool should be attempted
     # or agent should provide a meaningful error response
+
+
+def test_agent_api_status_code_question():
+    """Test that agent uses query_api for HTTP status code questions.
+
+    Question: 'What status code without auth?'
+    Expected: query_api in tool_calls, 401/403 in answer.
+    """
+    output = run_agent("What HTTP status code does the API return when you request /items/ without authentication?")
+
+    # Check required fields
+    assert "answer" in output, "Response must contain 'answer' field"
+    assert "tool_calls" in output, "Response must contain 'tool_calls' field"
+
+    # Check that query_api was attempted (may fail if backend not running)
+    tool_names = [call.get("tool") for call in output["tool_calls"]]
+    # Agent should attempt query_api for status code questions
+    assert "query_api" in tool_names, "Should use query_api for status code questions"
+
+
+def test_agent_list_files_for_routers():
+    """Test that agent uses list_files for router module questions.
+
+    Question: 'List all API router modules'
+    Expected: list_files in tool_calls, router names in answer.
+    """
+    output = run_agent("List all API router modules in the backend. What domain does each one handle?")
+
+    # Check required fields
+    assert "answer" in output, "Response must contain 'answer' field"
+    assert "tool_calls" in output, "Response must contain 'tool_calls' field"
+
+    # Check that list_files was used
+    tool_names = [call.get("tool") for call in output["tool_calls"]]
+    assert "list_files" in tool_names, "Should use list_files to discover router modules"
+
+    # Answer should mention some routers
+    answer_lower = output["answer"].lower()
+    expected_routers = ["items", "analytics", "pipeline"]
+    found_routers = [r for r in expected_routers if r in answer_lower]
+    assert len(found_routers) > 0, "Answer should mention at least one router module"

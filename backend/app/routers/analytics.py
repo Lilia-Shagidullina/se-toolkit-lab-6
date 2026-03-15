@@ -199,6 +199,15 @@ async def get_completion_rate(
     )
     total_learners = (await session.exec(total_stmt)).one()
 
+    # Handle division by zero: if no learners, return 0% completion rate
+    if total_learners == 0:
+        return {
+            "lab": lab,
+            "completion_rate": 0.0,
+            "passed": 0,
+            "total": 0,
+        }
+
     # Count distinct learners who scored >= 60
     passed_stmt = (
         select(func.count(func.distinct(InteractionLog.learner_id)))
@@ -242,12 +251,13 @@ async def get_top_learners(
 
     rows = (await session.exec(stmt)).all()
 
-    ranked = sorted(rows, key=lambda r: r.avg_score, reverse=True)
+    # Handle None values in avg_score by treating them as 0 for sorting
+    ranked = sorted(rows, key=lambda r: r.avg_score if r.avg_score is not None else 0, reverse=True)
 
     return [
         {
             "learner_id": r.learner_id,
-            "avg_score": round(r.avg_score, 1),
+            "avg_score": round(r.avg_score, 1) if r.avg_score is not None else 0.0,
             "attempts": r.attempts,
         }
         for r in ranked[:limit]

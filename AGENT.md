@@ -337,9 +337,10 @@ This project implements an AI agent (agent.py) that answers questions using a La
 User Question → LLM (with 3 tool schemas) → tool_calls?
     ↓ yes                                   ↓ no
 Execute tools → Append results         Extract answer
-  - read_file
-  - list_files  
-  - query_api
+
+- read_file
+- list_files  
+- query_api
     ↓
 Send back to LLM
     ↓
@@ -410,7 +411,7 @@ def safe_path(path: str) -> Path:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | LLM_API_KEY | LLM provider API key | ollama |
-| LLM_API_BASE | LLM API endpoint | http://10.93.25.238:8080/v1 |
+| LLM_API_BASE | LLM API endpoint | <http://10.93.25.238:8080/v1> |
 | LLM_MODEL | Model name | qwen2.5:3b |
 
 `.env.docker.secret` (Backend API configuration):
@@ -418,20 +419,22 @@ def safe_path(path: str) -> Path:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | LMS_API_KEY | Backend API key for query_api | my-secret-api-key |
-| AGENT_API_BASE_URL | Backend base URL | http://localhost:42002 |
+| AGENT_API_BASE_URL | Backend base URL | <http://localhost:42002> |
 
 ### 5. LLM Backend (Ollama on VM)
 
 Provider: Ollama (self-hosted)  
 Model: Qwen 2.5 3B  
-Endpoint: http://10.93.25.238:8080/v1
+Endpoint: <http://10.93.25.238:8080/v1>
 
 ## Usage
 
 # Run the agent with a question
+
 uv run agent.py "How many items are in the database?"
 
-# Output (JSON to stdout):
+# Output (JSON to stdout)
+
 {
   "answer": "There are 120 items in the database.",
   "source": "",
@@ -475,6 +478,7 @@ The system prompt instructs the LLM to:
 4. Include source references for file-based answers
 
 Key distinction: Wiki/source questions → read_file; Live data → query_api
+
 ## Tool Schemas (OpenAI Function Calling)
 
 Three tools registered with the LLM:
@@ -543,16 +547,21 @@ Three tools registered with the LLM:
 
 Run the test suite:
 
+```bash
 uv run pytest tests/test_agent.py -v
+```
 
-Tests (6 total):
+Tests (9 total):
 
-- test_agent_outputs_valid_json — verifies JSON structure
-- test_agent_uses_read_file_tool — wiki documentation questions
-- test_agent_uses_list_files_tool — directory listing questions
-- test_agent_security_path_traversal — path traversal protection
-- test_agent_uses_query_api_for_data — API data queries
-- test_agent_uses_read_file_for_framework — source code questions
+- test_agent_returns_valid_json — verifies JSON structure
+- test_agent_returns_source_field — verifies source field exists
+- test_agent_with_wiki_question — wiki documentation questions
+- test_agent_framework_question — source code questions (FastAPI)
+- test_agent_query_api_tool — API data queries
+- test_agent_api_status_code_question — HTTP status code questions
+- test_agent_list_files_for_routers — router module discovery
+- test_agent_branch_protection_question — wiki lookup for branch protection
+- test_agent_ssh_question — wiki lookup for SSH connection
 
 ## Benchmark Evaluation
 
@@ -573,10 +582,12 @@ The benchmark tests 10 questions across categories:
 The LLM (Ollama) runs on the VM:
 
 # On VM: start Ollama
+
 docker run -d --name ollama --restart unless-stopped \
   -p 8080:11434 -v ollama:/root/.ollama ollama/ollama:latest
 
 # Pull model
+
 docker exec ollama ollama pull qwen2.5:3b
 
 The backend runs separately via Docker Compose on port 42002.
@@ -595,17 +606,51 @@ The backend runs separately via Docker Compose on port 42002.
 - Tool results are truncated in logs for readability
 - query_api requires LMS_API_KEY to be configured
 
-## Lessons Learned
+## Lessons Learned (Task 3)
 
-1. Tool descriptions matter: The LLM relies on tool descriptions to decide which tool to use. Vague descriptions lead to wrong tool selection.
+1. __Tool descriptions matter:__ The LLM relies on tool descriptions to decide which tool to use. Vague descriptions lead to wrong tool selection.
 
-2. Source field is optional: Not all questions have a wiki source. System queries (via query_api) don't have a file reference.
+2. __Source field is optional:__ Not all questions have a wiki source. System queries (via query_api) don't have a file reference.
 
-3. Two API keys: LLM_API_KEY authenticates with the LLM provider; LMS_API_KEY authenticates with the backend API. Don't mix them up.
+3. __Two API keys:__ LLM_API_KEY authenticates with the LLM provider; LMS_API_KEY authenticates with the backend API. Don't mix them up.
 
-4. Environment variables: The autochecker injects its own values. Never hardcode API keys, base URLs, or model names.
+4. __Environment variables:__ The autochecker injects its own values. Never hardcode API keys, base URLs, or model names.
 
-5. Error handling: The agent must gracefully handle API errors, file not found, and path traversal attempts.
+5. __Error handling:__ The agent must gracefully handle API errors, file not found, and path traversal attempts.
 
-6. Iteration limit: The 10-iteration limit prevents infinite loops but may cut off complex multi-step reasoning.
-7. Content truncation: Large files get truncated in tool results. The LLM may miss information if the file is too long.
+6. __Iteration limit:__ The 10-iteration limit prevents infinite loops but may cut off complex multi-step reasoning.
+
+7. __Content truncation:__ Large files get truncated in tool results. The LLM may miss information if the file is too long.
+
+8. __Project structure in system prompt:__ Adding explicit project structure information to the system prompt significantly improves the agent's ability to navigate the codebase. The agent now knows exactly where to find routers, models, and configuration files.
+
+9. __Explicit JSON output format:__ The LLM doesn't always return structured JSON by default. Adding explicit output format instructions with an example response dramatically improved the consistency of JSON output and proper population of the `source` field.
+
+10. __query_api authentication:__ The query_api tool must authenticate using Bearer token format (`Authorization: Bearer {LMS_API_KEY}`), not `X-API-Key` header. This was critical for the backend API to accept requests.
+
+11. __HTTP method handling:__ The query_api implementation must handle multiple HTTP methods (GET, POST, PUT, DELETE, PATCH) to support various API endpoints. Each method requires different handling of request bodies.
+
+12. __Timeout configuration:__ Setting appropriate timeouts (60s for LLM, 30s for API) prevents the agent from hanging indefinitely on slow responses or network issues.
+
+13. __Iterative benchmark testing:__ Running `run_eval.py` after each change helps identify issues early. The workflow is: run benchmark → analyze failure → fix tool description/prompt/implementation → re-run.
+
+14. __Tool selection patterns:__ The agent learns to associate question types with tools:
+    - "What files..." → list_files
+    - "What framework..." → read_file
+    - "How many items..." → query_api
+    - "What status code..." → query_api
+    - "Explain the error..." → query_api + read_file
+
+## Final Test Results
+
+All 9 regression tests pass:
+
+- test_agent_returns_valid_json
+- test_agent_returns_source_field
+- test_agent_with_wiki_question
+- test_agent_framework_question
+- test_agent_query_api_tool
+- test_agent_api_status_code_question
+- test_agent_list_files_for_routers
+- test_agent_branch_protection_question (new - Task 3)
+- test_agent_ssh_question (new - Task 3)

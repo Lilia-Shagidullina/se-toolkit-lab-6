@@ -50,6 +50,15 @@ Tools available:
 - read_file(path): Read the contents of a file
 - query_api(method, path, body): Call the backend API
 
+Project structure:
+- wiki/ — project documentation
+- backend/app/routers/ — API router modules (items.py, analytics.py, interactions.py, pipeline.py, learners.py)
+- backend/app/main.py — main FastAPI application
+- backend/app/models/ — SQLAlchemy database models
+- backend/app/etl.py — ETL pipeline code
+- docker-compose.yml — Docker configuration
+- Dockerfile — backend Dockerfile
+
 Tool selection guide:
 - Use list_files/read_file for wiki documentation and source code questions
 - Use query_api for:
@@ -64,6 +73,20 @@ Process:
 3. For data/API questions: use query_api with appropriate method and path
 4. For error diagnosis: use query_api to reproduce the error, then read_file to find the bug
 5. When you find the answer, provide it with a source reference if applicable
+
+Output format:
+You must respond with a JSON object containing:
+- "answer": Your answer to the question (string)
+- "source": A reference to where you found the information (string)
+  - For files: use path/to/file.md#section-anchor format
+  - For API queries: use the endpoint (e.g., "GET /items/")
+  - If no source was used, use "unknown"
+
+Example response:
+{
+  "answer": "The backend uses FastAPI framework.",
+  "source": "backend/app/main.py"
+}
 
 Source reference format: path/to/file.md#section-anchor
 - Use the file path relative to project root

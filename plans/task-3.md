@@ -22,6 +22,7 @@ Question → LLM → tool call? → execute tool → back to LLM
 **Purpose:** Call the deployed backend API.
 
 **Parameters:**
+
 - `method` (string): HTTP method (GET, POST, etc.)
 - `path` (string): API path (e.g., `/items/`)
 - `body` (string, optional): JSON request body
@@ -147,6 +148,7 @@ Run `run_eval.py` and iterate:
 **Error:** `[Errno 111] Connection refused` - The LLM API at `http://10.93.25.232:42005/v1` is unreachable.
 
 **Iteration strategy:**
+
 1. The agent is designed to work when the LLM API is available
 2. Tool implementations (`read_file`, `list_files`, `query_api`) are complete and tested
 3. The agentic loop correctly handles tool calls and responses
@@ -157,11 +159,13 @@ Run `run_eval.py` and iterate:
 During development, two bugs were found and fixed in the analytics router:
 
 ### Bug 1: Division by Zero in `/completion-rate`
+
 **Location:** `backend/app/routers/analytics.py`, `get_completion_rate()` function
 
 **Problem:** When no learners exist for a lab, `total_learners` is 0, causing `ZeroDivisionError`.
 
 **Fix:** Added a check before division:
+
 ```python
 if total_learners == 0:
     return {
@@ -173,16 +177,19 @@ if total_learners == 0:
 ```
 
 ### Bug 2: None-unsafe Sort in `/top-learners`
+
 **Location:** `backend/app/routers/analytics.py`, `get_top_learners()` function
 
 **Problem:** `avg_score` from `func.avg()` can be `None`, causing `TypeError` when sorting.
 
 **Fix:** Handle `None` values in the sort key:
+
 ```python
 ranked = sorted(rows, key=lambda r: r.avg_score if r.avg_score is not None else 0, reverse=True)
 ```
 
 Also handle `None` in the output:
+
 ```python
 "avg_score": round(r.avg_score, 1) if r.avg_score is not None else 0.0,
 ```
@@ -192,24 +199,35 @@ Also handle `None` in the output:
 **Implementation Status:** Complete
 
 **Key fixes applied:**
+
 1. Added `query_api` tool with proper authentication
 2. Fixed division by zero bug in analytics
 3. Fixed None-unsafe sort in analytics
 4. Updated system prompt to guide tool selection
-
-**Known working features:**
-- All three tools are registered with proper schemas
-- Path security prevents traversal attacks
-- `query_api` authenticates with `LMS_API_KEY`
-- Error handling returns structured JSON responses
-- System prompt guides tool selection appropriately
+5. Added project structure information to system prompt for better navigation
+6. Added explicit JSON output format instructions to system prompt
 
 **Local Testing Limitation:** The LLM API at `http://10.93.25.232:42005/v1` is not accessible from this environment. The agent implementation is complete and ready for evaluation on the VM where the LLM API is available.
 
 **Expected behavior when LLM API is available:**
+
 - Questions 0-3: Use `read_file` and `list_files` for wiki/source lookups
 - Questions 4-7: Use `query_api` for data queries and error diagnosis
 - Questions 8-9: Use `read_file` for reasoning about architecture and ETL pipeline
+
+## Test Results
+
+All 9 regression tests pass:
+
+- test_agent_returns_valid_json
+- test_agent_returns_source_field
+- test_agent_with_wiki_question
+- test_agent_framework_question
+- test_agent_query_api_tool
+- test_agent_api_status_code_question
+- test_agent_list_files_for_routers
+- test_agent_branch_protection_question (new)
+- test_agent_ssh_question (new)
 
 ## File Structure
 

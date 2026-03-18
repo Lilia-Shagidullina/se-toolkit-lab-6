@@ -108,7 +108,9 @@ def test_agent_api_status_code_question():
     Question: 'What status code without auth?'
     Expected: query_api in tool_calls, 401/403 in answer.
     """
-    output = run_agent("What HTTP status code does the API return when you request /items/ without authentication?")
+    output = run_agent(
+        "What HTTP status code does the API return when you request /items/ without authentication?"
+    )
 
     # Check required fields
     assert "answer" in output, "Response must contain 'answer' field"
@@ -126,7 +128,9 @@ def test_agent_list_files_for_routers():
     Question: 'List all API router modules'
     Expected: list_files in tool_calls, router names in answer.
     """
-    output = run_agent("List all API router modules in the backend. What domain does each one handle?")
+    output = run_agent(
+        "List all API router modules in the backend. What domain does each one handle?"
+    )
 
     # Check required fields
     assert "answer" in output, "Response must contain 'answer' field"
@@ -134,10 +138,66 @@ def test_agent_list_files_for_routers():
 
     # Check that list_files was used
     tool_names = [call.get("tool") for call in output["tool_calls"]]
-    assert "list_files" in tool_names, "Should use list_files to discover router modules"
+    assert "list_files" in tool_names, (
+        "Should use list_files to discover router modules"
+    )
 
     # Answer should mention some routers
     answer_lower = output["answer"].lower()
     expected_routers = ["items", "analytics", "pipeline"]
     found_routers = [r for r in expected_routers if r in answer_lower]
     assert len(found_routers) > 0, "Answer should mention at least one router module"
+
+
+def test_agent_branch_protection_question():
+    """Test that agent uses read_file for branch protection questions.
+
+    Question: 'According to the project wiki, what steps are needed to protect a branch?'
+    Expected: read_file in tool_calls, branch/protect keywords in answer.
+    """
+    output = run_agent(
+        "According to the project wiki, what steps are needed to protect a branch on GitHub?"
+    )
+
+    # Check required fields
+    assert "answer" in output, "Response must contain 'answer' field"
+    assert "tool_calls" in output, "Response must contain 'tool_calls' field"
+
+    # Check that read_file was used
+    tool_names = [call.get("tool") for call in output["tool_calls"]]
+    assert "read_file" in tool_names or "list_files" in tool_names, (
+        "Should use file tools for wiki questions"
+    )
+
+    # Answer should mention branch protection steps
+    answer_lower = output["answer"].lower()
+    assert "branch" in answer_lower or "protect" in answer_lower, (
+        "Answer should mention branch protection"
+    )
+
+
+def test_agent_ssh_question():
+    """Test that agent uses read_file for SSH connection questions.
+
+    Question: 'What does the project wiki say about connecting to your VM via SSH?'
+    Expected: read_file in tool_calls, ssh/key/connect keywords in answer.
+    """
+    output = run_agent(
+        "What does the project wiki say about connecting to your VM via SSH? Summarize the key steps."
+    )
+
+    # Check required fields
+    assert "answer" in output, "Response must contain 'answer' field"
+    assert "tool_calls" in output, "Response must contain 'tool_calls' field"
+
+    # Check that file tools were used
+    tool_names = [call.get("tool") for call in output["tool_calls"]]
+    assert "read_file" in tool_names or "list_files" in tool_names, (
+        "Should use file tools for wiki questions"
+    )
+
+    # Answer should mention SSH-related keywords
+    answer_lower = output["answer"].lower()
+    ssh_keywords = ["ssh", "key", "connect", "vm"]
+    found_keywords = [kw for kw in ssh_keywords if kw in answer_lower]
+    assert len(found_keywords) > 0, "Answer should mention SSH-related keywords"

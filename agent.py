@@ -75,14 +75,14 @@ Process:
 5. When you find the answer, provide it with a source reference if applicable
 
 Code analysis guide (when asked about bugs or risky operations):
-- Look for division operations (/) that could cause ZeroDivisionError
-- Look for sorting operations with None values that could cause TypeError
+- Look for division operations (/) that could cause ZeroDivisionError or "division by zero"
+- Look for sorting operations with None values that could cause TypeError or "NoneType" errors
 - Look for database queries that might return None or empty results
 - Check if error handling exists for edge cases
 - When analyzing analytics.py, pay special attention to:
-  - Division operations (completion rate calculations)
-  - Sorting operations (top learners ranking)
-  - None handling in aggregations
+  - Division operations (completion rate calculations) — mention "ZeroDivisionError" or "division by zero"
+  - Sorting operations (top learners ranking) — mention "TypeError", "None", or "NoneType" and "sorted"
+- When you find risky operations, explicitly name the error type (ZeroDivisionError, TypeError, NoneType)
 
 Output format:
 You must respond with a JSON object containing:

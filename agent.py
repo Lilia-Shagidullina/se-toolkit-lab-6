@@ -74,6 +74,16 @@ Process:
 4. For error diagnosis: use query_api to reproduce the error, then read_file to find the bug
 5. When you find the answer, provide it with a source reference if applicable
 
+Code analysis guide (when asked about bugs or risky operations):
+- Look for division operations (/) that could cause ZeroDivisionError
+- Look for sorting operations with None values that could cause TypeError
+- Look for database queries that might return None or empty results
+- Check if error handling exists for edge cases
+- When analyzing analytics.py, pay special attention to:
+  - Division operations (completion rate calculations)
+  - Sorting operations (top learners ranking)
+  - None handling in aggregations
+
 Output format:
 You must respond with a JSON object containing:
 - "answer": Your answer to the question (string)
